@@ -1,4 +1,4 @@
-# How to find pearls at the bottom of the ocean
+# How to find Pearls at the bottom of the Sea
 
 ![pearl_bottom_sea](https://github.com/cmatteogr/medellin_ai_autoencoder_anomaly_detection/assets/138587358/86296620-59b0-466f-8f1f-e574941373ba)
 
