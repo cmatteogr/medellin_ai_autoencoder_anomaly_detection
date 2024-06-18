@@ -7,41 +7,52 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
-
+from src.constants import N_FEATURES
 from src.autoencoder_model import Autoencoder, EarlyStopping
 
 
-def train_autoencoder(properties_data: str) -> Autoencoder:
+def train_autoencoder(properties_data: str, train_size_percentage=0.8, batch_size=32) -> (Autoencoder, dict):
     """
     Train Autoencoder anomaly detection model
     :param properties_data: Properties data
-    :return: Trained Autoencoder anomaly detection model
+    :param train_size_percentage: Train size percentage, remaining is validation size
+    :param batch_size: Batch size
+    :return: Trained Autoencoder anomaly detection model and report dict
     """
+    print('# Start training autoencoder anomaly detection model')
+
+    # Check input arguments
+    assert 0.7 <= train_size_percentage < 1, 'Train size percentage should be between 0.7 and 1.'
+    assert 1 <= batch_size <= 124, 'Batch size should be between 1 and 124.'
+
     # Build Autoencoder Anomaly Detection method
     # Convert to PyTorch tensor
     tensor_data = torch.tensor(properties_data, dtype=torch.float32)
 
     # Split into training and validation sets
-    train_size = int(0.8 * len(tensor_data))
+    print('Split dataset into train and validation set')
+    train_size = int(train_size_percentage * len(tensor_data))
     val_size = len(tensor_data) - train_size
     train_dataset, val_dataset = random_split(tensor_data, [train_size, val_size])
 
     # Create DataLoader
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     # Init the autoencoder Hyperparameters
-    input_dim = len(properties_data[0])
     num_epochs = 300
     learning_rate = 0.001
 
     # Initialize the model, loss function and optimizer
-    model: Autoencoder = Autoencoder(input_dim)
+    print('Build Autoencoder anomaly detection model')
+    model: Autoencoder = Autoencoder(N_FEATURES)
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    early_stopping = EarlyStopping(patience=10)
+    early_stopping = EarlyStopping(patience=15)
 
     # Training loop
+    print('Training autoencoder anomaly detection model')
+    reconstruction_error = float('inf')
     for epoch in range(num_epochs):
         model.train()
         train_loss = 0
@@ -55,6 +66,7 @@ def train_autoencoder(properties_data: str) -> Autoencoder:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+        # Calculate train batch loss
         train_loss /= len(train_loader)
 
         # Validation
@@ -66,13 +78,25 @@ def train_autoencoder(properties_data: str) -> Autoencoder:
                 loss = criterion(outputs, inputs)
                 val_loss += loss.item()
 
+        # Calculate validation batch loss
         val_loss /= len(val_loader)
         print(f'epoch [{epoch + 1}/{num_epochs}], loss: {train_loss:.8f}, validation loss: {val_loss:.8f}')
 
-        # Check for early stopping
+        # Save last mse
+        reconstruction_error = val_loss
+
+        # Check for early stopping to avoid overfitting
         if early_stopping.step(val_loss):
             print("Early stopping triggered")
             break
 
+    print(f'Reconstruction error, best score: {reconstruction_error:.8f}')
+    # Build train report
+    print('Create training report dict')
+    report_dict = {
+        'reconstruction_error': float(reconstruction_error)
+    }
+
+    print('End training autoencoder anomaly detection model')
     # Return model filepath
-    return model
+    return model, report_dict
