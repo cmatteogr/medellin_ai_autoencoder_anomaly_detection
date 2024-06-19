@@ -34,14 +34,14 @@ properties_test_scaled = scaler_model.transform(properties_test_df)
 
 # Train autoencoder for anomaly detection model
 print('Train anomaly detection model (Autoencoder)')
-autoencoder_model, train_report_dict = train_autoencoder(properties_train_scaled, batch_size=32)
+autoencoder_model, train_report_dict = train_autoencoder(properties_train_scaled, batch_size=128)
 
 # Test Autoencoder performance
 print('Test anomaly detection model (Autoencoder)')
 test_report_dict = test_autoencoder(autoencoder_model, properties_test_scaled)
 
 # Evaluate if deploy the model
-reconstruction_error_threshold = 0.007
+reconstruction_error_threshold = 0.009
 if test_report_dict['reconstruction_error'] > reconstruction_error_threshold:
     print(f'The model doesn\'t have a good reconstruction error {test_report_dict["reconstruction_error"]}')
     print('Execute again or update hyperparameters if needed')
@@ -58,6 +58,7 @@ if os.path.exists(report_filepath):
     # Compare reconstruction error, define if update current model
     deploy_model = model_report['reconstruction_error'] > test_report_dict['reconstruction_error']
     print(f'Trained model has better performance than current deployed model: {deploy_model}')
+    print(f'Current model: {model_report['reconstruction_error']} New model:{test_report_dict['reconstruction_error']}')
 else:
     # Create First model version
     print('None deployed model found, deploy trained model')

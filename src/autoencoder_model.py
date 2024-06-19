@@ -14,19 +14,19 @@ class Autoencoder(nn.Module):
         # Encoder
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, 10),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(10, 7),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(7, 5),
-            nn.ReLU()
+            nn.LeakyReLU()
         )
 
         # Decoder
         self.decoder = nn.Sequential(
             nn.Linear(5, 7),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(7, 10),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.Linear(10, input_dim),
             nn.Sigmoid()
         )
