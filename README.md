@@ -13,4 +13,4 @@ Use python 3.12 and install the dependecies using requirements.txt
 The project has two main scripts:
 * train_pipeline: Pipeline to train the properties anomaly detection model (based on Autoencoder)
 * inference_execution: Execute the properties anomaly detection model, it returns the anomalies csv files and the reconstructed anomalies csv file.
-* find_nearest_properties: Used to find the properties with similar features in order to compare the anomalies.
+* find_nearest_properties: Used it to find similar properties based on their features in order to compare the anomalies.
