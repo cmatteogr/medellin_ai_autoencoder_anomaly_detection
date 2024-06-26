@@ -13,17 +13,17 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.neighbors import NearestNeighbors
 
 
-def anomaly_detection_properties_inference(properties_data, r_instance: [], n_close_anomalies: int):
+def anomaly_detection_properties_inference(properties_data, r_instance: [], n_closest_anomalies: int):
     """
     Find the anomalies in the properties data
     :param properties_data: Properties data
     :param r_instance: Reference reconstructed error instance, used to find anomalies
-    :param n_close_anomalies: Number of closed anomalies to filter
+    :param n_closest_anomalies: Number of closest anomalies to filter
     :return: Trained Autoencoder anomaly detection model and report dict
     """
-    print('Identify the closed properties anomalies')
+    print('Identify the closest properties anomalies')
     print(f'Reference instance: {r_instance}')
-    print(f'Get the closest {n_close_anomalies} properties anomalies')
+    print(f'Get the closest {n_closest_anomalies} properties anomalies')
 
     # Check inference conditions
     assert os.path.exists(MODEL_FILEPATH), 'Anomaly detection model file does not exist! execute training pipeline '
@@ -48,8 +48,8 @@ def anomaly_detection_properties_inference(properties_data, r_instance: [], n_cl
     reconstructed_data_narray = reconstructed_data.detach().cpu().numpy()
     reconstruction_error = properties_data_scaled - reconstructed_data_narray
 
-    # Create a Nearest Neighbors instance (finding 3 nearest neighbors)
-    nn = NearestNeighbors(n_neighbors=n_close_anomalies)
+    # Create a Nearest Neighbors instance (finding nearest neighbors)
+    nn = NearestNeighbors(n_neighbors=n_closest_anomalies)
     # Fit the model on the dataset
     nn.fit(reconstruction_error)
     # Find the nearest neighbors

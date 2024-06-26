@@ -29,11 +29,11 @@ properties_inference_df = pd.read_json(inference_data_filepath, lines=True)
 # [10] gmaps_geolocations_lng
 # [11] published_year
 # [12] published_month
-reference_anomaly_instance = [0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+reference_anomaly_instance = [0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
 n_close_anomalies = 5
 anomalies_df, r_anomalies_df, _ = anomaly_detection_properties_inference(properties_data=properties_inference_df,
                                                                          r_instance=reference_anomaly_instance,
-                                                                         n_close_anomalies=n_close_anomalies)
+                                                                         n_closest_anomalies=n_close_anomalies)
 # Save results
 print('Save properties anomalies results')
 anomalies_df.to_csv('./data/properties_anomalies.csv', index=False)
