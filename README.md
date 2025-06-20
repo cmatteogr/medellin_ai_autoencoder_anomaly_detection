@@ -8,9 +8,21 @@ The data set used contains properties for sale in Medellín (2021-2024). The goa
 
 ## Setup
 Use python 3.12 and install the dependecies using requirements.txt
+```bash
+pip install -r requirements.txt
+```
 
 ## Usage
 The project has two main scripts:
 * train_pipeline: Pipeline to train the properties anomaly detection model (based on Autoencoder)
+```bash
+python train_pipeline.py
+```
 * inference_execution: Execute the properties anomaly detection model, it returns the anomalies csv files and the reconstructed anomalies csv file.
+```bash
+python inference_execution.py
+```
 * find_nearest_properties: Used it to find similar properties based on their features in order to compare the anomalies.
+```bash
+python find_nearest_properties.py
+```

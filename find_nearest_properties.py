@@ -1,6 +1,5 @@
 """
 Author: Cesar M. Gonzalez
-
 Find nearest properties
 """
 

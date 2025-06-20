@@ -1,6 +1,5 @@
 """
 Author: Cesar M. Gonzalez
-
 Test Autoencoder anomaly detection model
 """
 

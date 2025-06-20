@@ -1,6 +1,5 @@
 """
 Author: Cesar M. Gonzalez
-
 Inference Autoencoder anomaly detection model
 """
 

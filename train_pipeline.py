@@ -5,7 +5,7 @@ Training Autoencoder anomaly detection model pipeline
 """
 from src.constants import SCALER_FILEPATH, MODEL_FILEPATH
 from src.train import train_autoencoder
-from src.test import test_autoencoder
+from src.evaluation import test_autoencoder
 from sklearn.preprocessing import MinMaxScaler
 import joblib
 import pandas as pd
