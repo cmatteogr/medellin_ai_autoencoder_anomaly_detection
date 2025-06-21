@@ -58,7 +58,7 @@ if os.path.exists(report_filepath):
     # Compare reconstruction error, define if update current model
     deploy_model = model_report['reconstruction_error'] > test_report_dict['reconstruction_error']
     print(f'Trained model has better performance than current deployed model: {deploy_model}')
-    print(f'Current model: {model_report['reconstruction_error']} New model:{test_report_dict['reconstruction_error']}')
+    print(f'Current model: {model_report["reconstruction_error"]} New model:{test_report_dict["reconstruction_error"]}')
 else:
     # Create First model version
     print('None deployed model found, deploy trained model')
