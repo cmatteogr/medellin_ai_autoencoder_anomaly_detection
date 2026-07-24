@@ -1110,128 +1110,233 @@ plt.show()
 ''')
 
 # --------------------------------------------------------------------------
-# 6b. Interactive: impact of each variant vs vanilla
+# 6b. Interactive: how each variant works, vs vanilla
 # --------------------------------------------------------------------------
 md(r"""
-### The impact of each variant, side by side with vanilla
+### Interactive: how each variant *works*, next to vanilla
 
-The table above ranks variants by one number. But what actually *changed* when you
-added a regularization term? Three things are worth watching, all measured against
-the vanilla baseline:
+The gallery above tells you *which* variant scored what. This panel is about the
+*idea* instead: pick a variant from the dropdown and see, side by side with the
+vanilla autoencoder, **the one mechanism that makes it different** — plus its
+advantage and disadvantage for hunting good anomalies.
 
-1. **Reconstruction error** — did it get better or worse? (Worse is often the point.)
-2. **Which features** the model now reconstructs differently.
-3. **The anomaly ranking** — of the top pearls vanilla would surface, how many does
-   this variant still agree on? This is the impact that matters for the actual goal.
-
-First an at-a-glance table for all variants, then an interactive panel to inspect
-one at a time.
+Each picture is drawn from the models you just trained, but the point is the
+*concept*, not the score. Run it in Colab for the live dropdown; a static render
+shows the default selection.
 """)
 
 code(r'''
-# Reconstructions for every trained variant, on test (for error) and inference
-# (for the pearl ranking). One cheap forward pass each.
-variant_names = [c.name for c in CONFIGS]
+import ipywidgets as widgets
+from IPython.display import HTML, display
 
-recon_test = {n: reconstruct(models[n], X_test_t) for n in variant_names}
-recon_infer = {n: reconstruct(models[n], X_infer_t) for n in variant_names}
+# One representative model per concept (all already trained above).
+CONCEPTS = {
+    "denoising": {
+        "model": "denoising",
+        "how": "Corrupts every input with noise, then asks the model to rebuild "
+               "the <b>clean</b> original. It cannot simply copy the input — the "
+               "input is wrong.",
+        "pro": "Refuses to memorise, so a genuine bargain is less likely to be "
+               "reconstructed faithfully and hidden. Robust to messy listings.",
+        "con": "The noise level is a knob: too high blurs real structure, too low "
+               "behaves like vanilla.",
+    },
+    "sparse": {
+        "model": "sparse_l1",
+        "how": "Adds a penalty that pushes latent activations toward zero, so only "
+               "a few units fire for any given listing.",
+        "pro": "A compact, more interpretable code — each active unit tends to "
+               "capture one kind of structure.",
+        "con": "Over-penalise and the bottleneck loses capacity; reconstruction and "
+               "the anomaly signal both degrade.",
+    },
+    "variational": {
+        "model": "vae",
+        "how": "The encoder outputs a <b>distribution</b> (a mean and a spread) "
+               "instead of a single point; we sample from it and pull it toward a "
+               "standard normal.",
+        "pro": "A smooth, continuous latent where 'how unlikely is this listing?' "
+               "has a real answer — a probabilistic anomaly score.",
+        "con": "One more term to balance; push it too hard and the latent collapses "
+               "to the prior (posterior collapse) and stops carrying information.",
+    },
+    "contractive": {
+        "model": "contractive",
+        "how": "Penalises how far the latent moves when the input is jittered, so "
+               "the encoding is locally stable.",
+        "pro": "Robust features: small measurement noise does not flip the verdict, "
+               "giving stable anomaly scores.",
+        "con": "Silent about directions the data barely varies in; the Jacobian "
+               "penalty adds compute.",
+    },
+    "hyperspherical": {
+        "model": "hyperspherical",
+        "how": "Projects every latent onto the unit sphere, so only its "
+               "<b>direction</b> survives — magnitude is thrown away.",
+        "pro": "Similarity becomes an angle; anomalies that differ in <i>kind</i> "
+               "(direction) stand out cleanly.",
+        "con": "Discards magnitude, which can itself be informative; contradicts a "
+               "Gaussian prior, so it will not mix with a plain VAE.",
+    },
+    "svdd": {
+        "model": "svdd",
+        "how": "Pulls all normal latents toward a single centre, so normality "
+               "collapses into a tight ball.",
+        "pro": "Distance from the centre is a direct one-class anomaly score — a "
+               "second, independent signal alongside reconstruction.",
+        "con": "Assumes normality is one blob; if the market has several normal "
+               "regimes, a single centre is too crude.",
+    },
+}
 
-test_mse = {n: float(((X_test - recon_test[n]) ** 2).mean()) for n in variant_names}
-feat_mae = {n: np.abs(X_test - recon_test[n]).mean(axis=0) for n in variant_names}
+# A fixed sample + one example listing, reused by the illustrations.
+set_seed()
+_samp = np.random.choice(len(X_test_t), 500, replace=False)
+_Xs = X_test_t[_samp]
+_one_np = X_test[_samp[0]]
+_rng = np.random.default_rng(SEED)
 
-# Rank each variant's "cheap and big" pearls, so we can measure how much the
-# ranking shifts away from vanilla. (Section 7 explains this error-vector trick;
-# here we only need it to compare variants.)
-_d = np.zeros(N_FEATURES, dtype=np.float32)
-_d[FEATURES.index("price")] = -1.0
-_d[FEATURES.index("area")] = 1.0
-_d_hat = _d / np.linalg.norm(_d)
 
-TOPN = 25
-top_pearls = {n: set(np.argsort(-((X_infer - recon_infer[n]) @ _d_hat))[:TOPN])
-              for n in variant_names}
-vanilla_top = top_pearls["vanilla"]
+@torch.no_grad()
+def _encode_np(model, X_t, sample=False):
+    """Latent codes as numpy. sample=True lets a VAE draw from q(z|x)."""
+    was_training = model.training
+    model.train(sample)          # encode() samples only in training mode
+    z, _, _ = model.encode(X_t.to(DEVICE))
+    model.train(was_training)
+    return z.cpu().numpy()
 
-# One row per variant, measured against vanilla.
-impact = pd.DataFrame({
-    "variant": variant_names,
-    "test MSE": [test_mse[n] for n in variant_names],
-    "ΔMSE vs vanilla": [test_mse[n] - test_mse["vanilla"] for n in variant_names],
-    f"pearls kept (of {TOPN})": [len(top_pearls[n] & vanilla_top)
-                                 for n in variant_names],
-    f"pearls changed (of {TOPN})": [TOPN - len(top_pearls[n] & vanilla_top)
-                                    for n in variant_names],
-}).set_index("variant")
 
-# Colour the deltas: red = higher error than vanilla, blue = lower. The changed
-# column uses one-hue intensity (magnitude, not sign).
-m = impact["ΔMSE vs vanilla"].abs().max()
-(impact.style
- .format({"test MSE": "{:.5f}", "ΔMSE vs vanilla": "{:+.5f}"})
- .background_gradient(cmap="RdBu_r", subset=["ΔMSE vs vanilla"], vmin=-m, vmax=m)
- .background_gradient(cmap="Blues", subset=[f"pearls changed (of {TOPN})"])
- .set_caption("Impact vs vanilla — lower error is not the goal; a shifted "
-              "pearl ranking is the real effect"))
+def _pca2(Z):
+    return PCA(n_components=2, random_state=SEED).fit_transform(Z)
+
+
+print("Concept explainer ready.")
 ''')
 
 code(r'''
-# Interactive: pick a variant, see its full impact against vanilla.
-# In Colab the dropdown is live; when the notebook is only rendered (not run),
-# it shows the default selection.
-import ipywidgets as widgets
+def _draw_concept(concept, axL, axR):
+    """Draw the vanilla idea (left) and the variant's twist (right)."""
+    x = np.arange(N_FEATURES)
+
+    if concept == "denoising":
+        noisy = np.clip(_one_np + 0.10 * _rng.standard_normal(N_FEATURES), 0, 1)
+        axL.bar(x, _one_np, color=PALETTE[0])
+        axL.set_title("Vanilla: input = target (it can copy)")
+        axR.bar(x, noisy, color=MUTED, label="corrupted input (fed in)")
+        axR.plot(x, _one_np, color=PALETTE[1], marker="o", ms=4, lw=0,
+                 label="clean target (scored against)")
+        axR.set_title("Denoising: sees corrupted, must output clean")
+        axR.legend(loc="upper right", fontsize=8)
+        for ax in (axL, axR):
+            ax.set_xlabel("feature"); ax.set_ylabel("scaled value"); tidy(ax)
+
+    elif concept == "sparse":
+        zv = np.abs(_encode_np(models["vanilla"], _Xs)).mean(0)
+        zs = np.abs(_encode_np(models["sparse_l1"], _Xs)).mean(0)
+        u = np.arange(len(zv))
+        top = max(zv.max(), zs.max()) * 1.15
+        axL.bar(u, zv, color=PALETTE[0]); axL.set_title("Vanilla: most units active")
+        axR.bar(u, zs, color=PALETTE[0]); axR.set_title("Sparse: most units near zero")
+        for ax in (axL, axR):
+            ax.set_xlabel("latent unit"); ax.set_ylabel("mean |activation|")
+            ax.set_ylim(0, top); ax.set_xticks(u); tidy(ax)
+
+    elif concept == "variational":
+        one = X_test_t[_samp[0]:_samp[0] + 1].repeat(300, 1)
+        zc_van = _encode_np(models["vanilla"], one)                 # one point
+        zc_vae = _encode_np(models["vae"], one, sample=True)        # a cloud
+        axL.scatter(zc_van[:, 0], zc_van[:, 1], color=PALETTE[0], s=60, zorder=3)
+        axL.set_title("Vanilla: one listing -> one point")
+        axR.scatter(zc_vae[:, 0], zc_vae[:, 1], color=PALETTE[0], s=14, alpha=0.5,
+                    linewidths=0)
+        axR.set_title("VAE: one listing -> a distribution")
+        for ax in (axL, axR):
+            ax.set_xlabel("latent dim 1"); ax.set_ylabel("latent dim 2")
+            tidy(ax, ygrid_only=False)
+
+    elif concept == "contractive":
+        jitter = np.clip(_one_np + 0.03 * _rng.standard_normal((300, N_FEATURES)),
+                         0, 1).astype(np.float32)
+        jt = torch.tensor(jitter)
+        zv = _encode_np(models["vanilla"], jt)[:, :2]
+        zc = _encode_np(models["contractive"], jt)[:, :2]
+        both = np.vstack([zv, zc])
+        lim = [both[:, 0].min(), both[:, 0].max(), both[:, 1].min(), both[:, 1].max()]
+        axL.scatter(zv[:, 0], zv[:, 1], color=PALETTE[0], s=12, alpha=0.5, linewidths=0)
+        axL.set_title("Vanilla: jittered input -> scattered latent")
+        axR.scatter(zc[:, 0], zc[:, 1], color=PALETTE[0], s=12, alpha=0.5, linewidths=0)
+        axR.set_title("Contractive: same jitter -> tight latent")
+        for ax in (axL, axR):
+            ax.set_xlim(lim[0], lim[1]); ax.set_ylim(lim[2], lim[3])
+            ax.set_xlabel("latent dim 1"); ax.set_ylabel("latent dim 2")
+            tidy(ax, ygrid_only=False)
+
+    elif concept == "hyperspherical":
+        Z2 = _pca2(_encode_np(models["vanilla"], _Xs))
+        unit = Z2 / (np.linalg.norm(Z2, axis=1, keepdims=True) + 1e-9)
+        axL.scatter(Z2[:, 0], Z2[:, 1], color=PALETTE[0], s=10, alpha=0.5, linewidths=0)
+        axL.set_title("Vanilla: latents at any radius")
+        theta = np.linspace(0, 2 * np.pi, 200)
+        axR.plot(np.cos(theta), np.sin(theta), color=MUTED, lw=1)
+        axR.scatter(unit[:, 0], unit[:, 1], color=PALETTE[0], s=10, alpha=0.5,
+                    linewidths=0)
+        axR.set_title("Hyperspherical: projected onto the unit circle")
+        axR.set_aspect("equal")
+        for ax in (axL, axR):
+            ax.set_xlabel("dir 1"); ax.set_ylabel("dir 2"); tidy(ax, ygrid_only=False)
+
+    elif concept == "svdd":
+        Zv = _pca2(_encode_np(models["vanilla"], _Xs))
+        Zs = _pca2(_encode_np(models["svdd"], _Xs))
+        axL.scatter(Zv[:, 0], Zv[:, 1], color=PALETTE[0], s=10, alpha=0.5, linewidths=0)
+        axL.set_title("Vanilla: no notion of a centre")
+        c = Zs.mean(0)
+        dist = np.linalg.norm(Zs - c, axis=1)
+        sc = axR.scatter(Zs[:, 0], Zs[:, 1], c=dist, cmap=SEQ_BLUE, s=12,
+                         linewidths=0)
+        for r in np.percentile(dist, [50, 90]):        # two reference rings
+            axR.add_patch(plt.Circle(c, r, fill=False, color=MUTED, lw=1, ls="--"))
+        axR.scatter([c[0]], [c[1]], color=PALETTE[1], marker="X", s=150,
+                    edgecolor="white", linewidths=1.4, zorder=5)
+        axR.annotate("centre c", (c[0], c[1]), textcoords="offset points",
+                     xytext=(9, 8), fontsize=9, fontweight="bold", color=PALETTE[1])
+        cb = plt.gcf().colorbar(sc, ax=axR, pad=0.02, fraction=0.045)
+        cb.set_label("distance from centre  (= anomaly score)", fontsize=8,
+                     color=INK_2)
+        cb.outline.set_visible(False)
+        axR.set_title("Deep SVDD: normal data collapses toward one centre")
+        axR.set_aspect("equal")
+        for ax in (axL, axR):
+            ax.set_xlabel("latent 1"); ax.set_ylabel("latent 2"); tidy(ax, ygrid_only=False)
 
 
-def compare_to_vanilla(variant="denoising"):
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.4))
-
-    # --- 1. Reconstruction error: vanilla vs this variant ---
-    v, x = test_mse["vanilla"], test_mse[variant]
-    axes[0].bar(["vanilla", variant], [v, x], color=[MUTED, PALETTE[0]], width=0.6)
-    for i, val in enumerate([v, x]):
-        axes[0].text(i, val, f"{val:.5f}", ha="center", va="bottom",
-                     fontsize=9, color=INK_2)
-    delta = x - v
-    axes[0].set_title(f"Reconstruction error  (Δ {delta:+.5f})")
-    axes[0].set_ylabel("test MSE")
-    tidy(axes[0])
-
-    # --- 2. Per-feature error change (variant - vanilla), signed/diverging ---
-    diff = feat_mae[variant] - feat_mae["vanilla"]
-    order = np.argsort(diff)
-    # red = reconstructs this feature worse than vanilla, green = better.
-    colors = [PALETTE[7] if d > 0 else PALETTE[2] for d in diff[order]]
-    axes[1].barh([FEATURES[i] for i in order], diff[order], color=colors, height=0.66)
-    axes[1].axvline(0, color=INK_2, linewidth=0.8)
-    axes[1].set_title("Per-feature error change  (red = worse, green = better)")
-    axes[1].set_xlabel("mean |error|  −  vanilla")
-    axes[1].xaxis.grid(True)
-    axes[1].yaxis.grid(False)
-    axes[1].spines["top"].set_visible(False)
-    axes[1].spines["right"].set_visible(False)
-
-    # --- 3. Pearl ranking: agreement with vanilla ---
-    kept = len(top_pearls[variant] & vanilla_top)
-    changed = TOPN - kept
-    axes[2].bar(["kept", "changed"], [kept, changed],
-                color=[MUTED, PALETTE[1]], width=0.6)
-    for i, val in enumerate([kept, changed]):
-        axes[2].text(i, val, str(val), ha="center", va="bottom",
-                     fontsize=10, color=INK_2)
-    axes[2].set_title(f"Top-{TOPN} pearls vs vanilla")
-    axes[2].set_ylabel("listings")
-    axes[2].set_ylim(0, TOPN)
-    tidy(axes[2])
-
+def explain_variant(variant="denoising"):
+    info = CONCEPTS[variant]
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(13, 4.6))
+    _draw_concept(variant, axL, axR)
     fig.suptitle(f"{variant}   vs   vanilla", x=0.005, ha="left",
                  fontsize=13, fontweight="bold", color=INK)
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     plt.show()
+
+    # Concept card: mechanism + the pearl-hunting trade-off. Border only, so it
+    # reads in both light and dark themes.
+    display(HTML(f"""
+    <div style="border:1px solid #c3c2b7; border-radius:8px; padding:12px 16px;
+                max-width:900px; line-height:1.5; font-size:14px;">
+      <div style="margin-bottom:6px;"><b>How it works</b> — {info['how']}</div>
+      <div style="margin-bottom:6px;"><b>&#10003; Advantage for pearl-hunting</b>
+           — {info['pro']}</div>
+      <div><b>&#10007; Disadvantage</b> — {info['con']}</div>
+    </div>
+    """))
 
 
 widgets.interact(
-    compare_to_vanilla,
-    variant=widgets.Dropdown(options=variant_names, value="denoising",
-                             description="variant:"),
+    explain_variant,
+    variant=widgets.Dropdown(options=list(CONCEPTS), value="denoising",
+                             description="concept:"),
 )
 ''')
 

@@ -25,6 +25,9 @@ be uploaded. CPU is enough; the whole notebook runs in a few minutes.
    - hyperspherical (unit-sphere latent),
    - Deep SVDD (hypersphere compactness),
    - and hybrids such as denoising + sparse + variational.
+   An **interactive dropdown** then illustrates how each variant works vs the
+   vanilla autoencoder — the mechanism, plus its advantage and disadvantage for
+   finding good anomalies.
 5. Finding **good anomalies** as a *direction* in reconstruction-error space,
    including why the repository's nearest-neighbour query is equivalent to
    maximising `e·d − ½‖e‖²`.
