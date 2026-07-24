@@ -46,11 +46,10 @@ a very concrete question:
 
 > *Which listings are priced far below what their own characteristics predict?*
 
-We answer it with autoencoders. Along the way we build **one configurable model**
-whose regularization terms and latent-space transformations can be switched on,
-off, and **combined** — so a vanilla autoencoder, a sparse one, a denoising one, a
-variational one, and hybrids of all of them are the same class with different
-settings.
+We answer it with autoencoders — building **one configurable model** whose
+regularization terms and latent transforms can be switched on, off, and
+**combined**. Vanilla, sparse, denoising, variational, and every hybrid are the
+same class with different settings.
 """)
 
 md(r"""
@@ -63,7 +62,7 @@ md(r"""
 | 3 | Preprocessing | Why `MinMaxScaler` + a `Sigmoid` output belong together |
 | 4 | The vanilla autoencoder | The baseline from `src/autoencoder_model.py` |
 | 5 | **The regularization zoo** | Sparse / denoising / variational / contractive / hyperspherical / SVDD — as composable terms |
-| 6 | Variant gallery | Train them, compare them, look inside the latent space |
+| 6 | Variant gallery | Train them, compare them, and an **interactive panel** for each variant's impact vs vanilla |
 | 7 | **Good anomalies** | The *direction* trick in reconstruction-error space |
 | 8 | Clustering the error space | Discovering *kinds* of anomaly, not just a ranking |
 | 9 | Sanity check | Do the pearls survive a comparison with their neighbours? |
@@ -126,16 +125,16 @@ print("Data files:", sorted(os.listdir("data")))
 ''')
 
 code(r'''
-# Colab already ships torch / pandas / scikit-learn / matplotlib, so this is
-# normally a no-op. It only does real work on a bare environment.
+# Colab already ships these, so this is normally a no-op. It only does real work
+# on a bare local environment.
 IN_COLAB = "google.colab" in sys.modules
 
 try:
-    import torch, pandas, sklearn, matplotlib  # noqa: F401
+    import torch, pandas, sklearn, matplotlib, ipywidgets  # noqa: F401
 except ImportError:
     subprocess.run(
         [sys.executable, "-m", "pip", "install", "-q",
-         "torch", "pandas", "scikit-learn", "matplotlib"],
+         "torch", "pandas", "scikit-learn", "matplotlib", "ipywidgets"],
         check=True,
     )
 
@@ -182,14 +181,12 @@ print("torch", torch.__version__, "| device:", DEVICE)
 md(r"""
 ### A shared chart style
 
-Every plot in this notebook uses the same palette and the same recessive grid, so
-you compare *data*, not decoration. Colours are assigned by the **job** they do:
+Every plot uses the same palette, so you compare *data*, not decoration. Colours
+are assigned by the **job** they do:
 
-- **categorical** (identity: train vs. validation, one variant vs. another) — a
-  fixed hue order, never cycled;
-- **sequential** (magnitude: price on a scatter) — one hue, light to dark;
-- **diverging** (polarity: an error that can be positive *or* negative) — two
-  hues with a neutral grey midpoint.
+- **categorical** (identity — train vs. validation) — a fixed hue order;
+- **sequential** (magnitude — price) — one hue, light to dark;
+- **diverging** (polarity — a signed error) — two hues, neutral grey midpoint.
 """)
 
 code(r'''
@@ -352,20 +349,16 @@ md(r"""
 ---
 ## 3. Preprocessing — scaling that matches the output layer
 
-The decoder's last layer is a `Sigmoid`, which can only emit values in $(0, 1)$.
-That is a design decision, not an accident: it pairs with a **MinMax** scaler so
-the target and the model's reachable range agree.
+The decoder ends in a `Sigmoid`, which can only emit values in $(0, 1)$. So we
+scale the inputs into $[0, 1]$ with a **MinMax** scaler — target range and model
+range agree:
 
 $$x_{\text{scaled}} = \frac{x - x_{\min}}{x_{\max} - x_{\min}} \in [0, 1]$$
 
-If you scaled with a `StandardScaler` instead (mean 0, unit variance, unbounded),
-a `Sigmoid` output could never reproduce a value of $-2.4$ and the model would
-fight its own architecture. **Match the output activation to the target range** —
-this is one of the most common autoencoder bugs.
-
-The repository ships a scaler already fitted on the full dataset
-(`src/preprocess_scaler_model.pkl`), and we reuse it so every number in this
-notebook is comparable with the reference implementation.
+A `StandardScaler` (unbounded) would ask a `Sigmoid` to reproduce values it can
+never reach. **Match the output activation to the target range** — a classic
+autoencoder bug. We reuse the scaler the repo already fitted
+(`src/preprocess_scaler_model.pkl`) so the numbers here match the reference code.
 """)
 
 code(r'''
@@ -428,12 +421,11 @@ market — "stratum 6 near El Poblado with 100 m² costs about this much".
    encoder        latent        decoder
 ```
 
-**Why this finds anomalies.** The model is trained on the majority. A listing that
-follows the market's rules is reconstructed accurately. A listing that breaks them
-gets reconstructed as *what the market says it should have been* — and the gap
-between the two is the signal.
+**Why this finds anomalies.** Trained on the majority, the model reconstructs a
+normal listing accurately. A listing that breaks the market's rules gets
+reconstructed as *what it should have been* — and that gap is the signal.
 
-This is the architecture in `src/autoencoder_model.py`, reproduced here so the
+This is the architecture from `src/autoencoder_model.py`, reproduced so the
 workshop is self-contained.
 """)
 
@@ -585,14 +577,13 @@ plt.show()
 ''')
 
 md(r"""
-The left histogram is the whole idea in one picture: a dense peak of listings the
-model reproduces almost perfectly, and a long right tail it cannot. **The tail is
-the hunting ground.**
+The left histogram is the whole idea in one picture: a dense peak the model
+reproduces almost perfectly, and a long right tail it cannot. **The tail is the
+hunting ground.**
 
-But a single MSE number collapses 13 features into one and throws away the thing
-we care about most — *in which direction* a listing is unusual. A property that is
-unexpectedly **expensive** and one that is unexpectedly **cheap** can have exactly
-the same MSE. We come back to this in Section 7.
+But one MSE number collapses 13 features into one and hides *which direction* a
+listing is unusual — an unexpectedly **expensive** listing and an unexpectedly
+**cheap** one can share the same MSE. Section 7 fixes this.
 """)
 
 # --------------------------------------------------------------------------
@@ -602,14 +593,13 @@ md(r"""
 ---
 ## 5. The regularization zoo
 
-A plain autoencoder has one failure mode: with enough capacity it learns a
-near-identity function, reconstructs *everything* well — including the anomalies —
-and the signal disappears. Every named autoencoder variant is a different answer
-to "how do we stop that?".
+A plain autoencoder has one weakness: given enough capacity it learns to *copy* its
+input — reconstructing the anomalies too — and the signal vanishes. Each named
+variant is a different way to stop that.
 
-The insight that organises this section: **the variants are not different
-architectures. They are different extra terms on the same loss, plus optional
-transformations of the latent vector.** So we implement them as *switches*.
+The key idea: **these are not different architectures. They are extra terms on the
+same loss, plus optional transforms of the latent vector.** So we build them as
+switches on one model.
 
 $$\mathcal{L} = \underbrace{\lVert x - \hat{x}\rVert^2}_{\text{reconstruction}}
 + \lambda_{1}\underbrace{\lVert z\rVert_1}_{\text{sparse}}
@@ -617,48 +607,23 @@ $$\mathcal{L} = \underbrace{\lVert x - \hat{x}\rVert^2}_{\text{reconstruction}}
 + \lambda_{c}\underbrace{\lVert J_f(x)\rVert_F^2}_{\text{contractive}}
 + \lambda_{s}\underbrace{\lVert z - c\rVert^2}_{\text{SVDD}}$$
 
-### The terms, one at a time
+| Variant | What it changes | Why it helps |
+|---|---|---|
+| **Denoising** | Corrupts the input; scores against the *clean* target | Can't copy its input, so it learns what the data *should* look like |
+| **Sparse (L1)** | Penalises latent activations, $\lambda\sum_j\lvert z_j\rvert$ | Few units fire per listing — a compact code |
+| **Sparse (KL)** | Pushes each unit's mean activation toward a small $\rho$ | Same goal; needs a `sigmoid` latent (activations in $(0,1)$) |
+| **Variational** | Encoder emits a *distribution* $\mu,\log\sigma^2$; sample, KL to $\mathcal{N}(0,I)$ | A smooth latent where "how unlikely is this?" is answerable |
+| **Contractive** | Penalises the encoder's Jacobian | Latent barely moves when the input jitters — robust features |
+| **Hyperspherical** | Projects $z$ onto the unit sphere | Keeps only *direction*; similarity becomes an angle |
+| **Deep SVDD** | Pulls latents toward a fixed centre $c$ | $\lVert z-c\rVert$ becomes a second, independent anomaly score |
 
-**Denoising (DAE).** Not a loss term at all — a change of *input*. Corrupt $x$ into
-$\tilde{x}$, feed the corrupted version, but score the reconstruction against the
-clean original:
-$$\mathcal{L} = \lVert x - g(f(\tilde{x}))\rVert^2$$
-The model can no longer copy its input, because its input is wrong. It must learn
-what the data *should* look like. For our purposes this is the most directly useful
-variant: noisy listings are exactly what we are up against.
+Two tricks make two of these cheap:
 
-**Sparse (SAE).** Penalise the latent activations so only a few fire per listing.
-Two flavours, both included:
-- **L1**: $\lambda \sum_j |z_j|$ — simple, works with any activation.
-- **KL sparsity**: force each unit's average activation $\hat\rho_j$ toward a small
-  target $\rho$ (say 0.05):
-  $$\sum_j \rho \log\frac{\rho}{\hat\rho_j} + (1-\rho)\log\frac{1-\rho}{1-\hat\rho_j}$$
-  This one *requires* a `sigmoid` latent activation — $\hat\rho_j$ must be a value in
-  $(0,1)$ for the formula to mean anything. Our config enforces that.
-
-**Variational (VAE).** The encoder stops emitting a point and emits a
-*distribution*: $\mu(x)$ and $\log\sigma^2(x)$. We sample
-$z = \mu + \sigma \odot \epsilon$ (the reparameterization trick, which keeps the
-sampling differentiable) and pull the distribution toward a standard normal prior
-with a KL term. The result is a *continuous, well-behaved* latent space where
-nearby points decode to similar properties — and where "how unlikely is this
-listing" becomes a question you can actually answer.
-
-**Contractive (CAE).** Penalise the Frobenius norm of the encoder's Jacobian, so
-the latent barely moves when the input jitters. Computing a full Jacobian is
-expensive, so we use the **Hutchinson estimator**: for a random $v \sim \mathcal{N}(0,I)$,
-$\mathbb{E}\lVert J^\top v \rVert^2 = \lVert J \rVert_F^2$ — one extra backward pass
-instead of 5.
-
-**Hyperspherical.** A latent *transformation*, not a penalty: project $z$ onto the
-unit sphere, $z \leftarrow z / \lVert z \rVert$. Only *direction* survives, magnitude
-is discarded, and similarity becomes an angle.
-
-**Deep SVDD (soft-boundary).** Pull every training latent toward a fixed centre $c$,
-$\lambda_s \lVert z - c \rVert^2$, so normal data collapses into a tight hypersphere.
-Then $\lVert z - c \rVert$ *is* your anomaly score — the distance from the centre of
-normality. Combined with a reconstruction term this gives you two independent
-scores from one model.
+- **Variational** samples with $z=\mu+\sigma\odot\epsilon$ (the *reparameterization
+  trick*) so the sampling stays differentiable.
+- **Contractive** skips the full Jacobian with the *Hutchinson estimator*:
+  $\mathbb{E}_v\lVert J^\top v\rVert^2=\lVert J\rVert_F^2$ — one extra backward pass
+  instead of five.
 """)
 
 code(r'''
@@ -1044,12 +1009,12 @@ md(r"""
 ### Reading this table correctly
 
 **Lower reconstruction error is *not* automatically better.** A model that
-reconstructs everything perfectly has learned the identity function and is useless
-for anomaly detection — it reconstructs the pearls too. The regularized variants
-*should* score slightly worse here; that is them refusing to memorise.
+reconstructs everything perfectly has learned the identity function — it
+reconstructs the pearls too, and is useless for anomaly detection. The regularized
+variants *should* score slightly worse; that is them refusing to memorise.
 
-What you actually want is a model that reconstructs the *majority* well and the
-*anomalies* badly. The gap matters, not the average.
+You want a model that reconstructs the *majority* well and the *anomalies* badly.
+The gap matters, not the average.
 """)
 
 code(r'''
@@ -1099,26 +1064,18 @@ plt.show()
 md(r"""
 ### Looking inside the latent space
 
-Five dimensions do not fit on a screen, so we project them to two with PCA. Two
-things are worth reading off these panels — and **the axis ranges matter as much
-as the shapes**:
+Five dimensions don't fit on a screen, so we project to two with PCA. Watch the
+*shapes* — and the *axis ranges*:
 
-- **vanilla** — an arbitrary cloud, often in two or three lobes. Nothing shaped it
-  except the reconstruction objective.
-- **sparse_l1** — most points collapse toward the origin with a few streaks
-  escaping: the L1 penalty pushes coordinates to zero, and only the listings that
-  genuinely need a unit switch one on.
-- **denoising** — a narrow, elongated band. Corrupted inputs force the encoder to
-  discard the directions that carried the noise.
-- **vae** — a rounded, evenly filled cloud. That is the Gaussian prior doing its job,
-  and it is the clearest visual difference in the whole grid.
-- **hyperspherical** — a caution about projections. Every latent here has length
-  exactly 1, but a 2D PCA view of a 5D hypersphere is a *filled* region, not a ring;
-  the sphere's structure lives in the dimensions PCA just flattened. Do not read a
-  low-dimensional projection as if it were the space itself.
-- **svdd** — look at the tick labels: the whole cloud spans a fraction of the
-  vanilla range. That is the compactness penalty crushing normality toward the
-  centre, which is precisely what makes distance-from-centre a usable score.
+- **vanilla** — an arbitrary cloud; only reconstruction shaped it.
+- **sparse_l1** — points collapse toward the origin: L1 pushes coordinates to zero.
+- **denoising** — a narrow band; corruption forces the encoder to drop noisy directions.
+- **vae** — a rounded, filled cloud: the Gaussian prior at work (clearest difference here).
+- **hyperspherical** — a caution: every latent has length 1, but a 2D view of a 5D
+  sphere is a *filled* disc, not a ring. Don't read a projection as the space itself.
+- **svdd** — check the tick labels: the whole cloud spans a fraction of the vanilla
+  range. The compactness penalty crushes normality toward the centre — which is what
+  makes distance-from-centre a usable score.
 """)
 
 code(r'''
@@ -1153,22 +1110,147 @@ plt.show()
 ''')
 
 # --------------------------------------------------------------------------
+# 6b. Interactive: impact of each variant vs vanilla
+# --------------------------------------------------------------------------
+md(r"""
+### The impact of each variant, side by side with vanilla
+
+The table above ranks variants by one number. But what actually *changed* when you
+added a regularization term? Three things are worth watching, all measured against
+the vanilla baseline:
+
+1. **Reconstruction error** — did it get better or worse? (Worse is often the point.)
+2. **Which features** the model now reconstructs differently.
+3. **The anomaly ranking** — of the top pearls vanilla would surface, how many does
+   this variant still agree on? This is the impact that matters for the actual goal.
+
+First an at-a-glance table for all variants, then an interactive panel to inspect
+one at a time.
+""")
+
+code(r'''
+# Reconstructions for every trained variant, on test (for error) and inference
+# (for the pearl ranking). One cheap forward pass each.
+variant_names = [c.name for c in CONFIGS]
+
+recon_test = {n: reconstruct(models[n], X_test_t) for n in variant_names}
+recon_infer = {n: reconstruct(models[n], X_infer_t) for n in variant_names}
+
+test_mse = {n: float(((X_test - recon_test[n]) ** 2).mean()) for n in variant_names}
+feat_mae = {n: np.abs(X_test - recon_test[n]).mean(axis=0) for n in variant_names}
+
+# Rank each variant's "cheap and big" pearls, so we can measure how much the
+# ranking shifts away from vanilla. (Section 7 explains this error-vector trick;
+# here we only need it to compare variants.)
+_d = np.zeros(N_FEATURES, dtype=np.float32)
+_d[FEATURES.index("price")] = -1.0
+_d[FEATURES.index("area")] = 1.0
+_d_hat = _d / np.linalg.norm(_d)
+
+TOPN = 25
+top_pearls = {n: set(np.argsort(-((X_infer - recon_infer[n]) @ _d_hat))[:TOPN])
+              for n in variant_names}
+vanilla_top = top_pearls["vanilla"]
+
+# One row per variant, measured against vanilla.
+impact = pd.DataFrame({
+    "variant": variant_names,
+    "test MSE": [test_mse[n] for n in variant_names],
+    "ΔMSE vs vanilla": [test_mse[n] - test_mse["vanilla"] for n in variant_names],
+    f"pearls kept (of {TOPN})": [len(top_pearls[n] & vanilla_top)
+                                 for n in variant_names],
+    f"pearls changed (of {TOPN})": [TOPN - len(top_pearls[n] & vanilla_top)
+                                    for n in variant_names],
+}).set_index("variant")
+
+# Colour the deltas: red = higher error than vanilla, blue = lower. The changed
+# column uses one-hue intensity (magnitude, not sign).
+m = impact["ΔMSE vs vanilla"].abs().max()
+(impact.style
+ .format({"test MSE": "{:.5f}", "ΔMSE vs vanilla": "{:+.5f}"})
+ .background_gradient(cmap="RdBu_r", subset=["ΔMSE vs vanilla"], vmin=-m, vmax=m)
+ .background_gradient(cmap="Blues", subset=[f"pearls changed (of {TOPN})"])
+ .set_caption("Impact vs vanilla — lower error is not the goal; a shifted "
+              "pearl ranking is the real effect"))
+''')
+
+code(r'''
+# Interactive: pick a variant, see its full impact against vanilla.
+# In Colab the dropdown is live; when the notebook is only rendered (not run),
+# it shows the default selection.
+import ipywidgets as widgets
+
+
+def compare_to_vanilla(variant="denoising"):
+    fig, axes = plt.subplots(1, 3, figsize=(16, 4.4))
+
+    # --- 1. Reconstruction error: vanilla vs this variant ---
+    v, x = test_mse["vanilla"], test_mse[variant]
+    axes[0].bar(["vanilla", variant], [v, x], color=[MUTED, PALETTE[0]], width=0.6)
+    for i, val in enumerate([v, x]):
+        axes[0].text(i, val, f"{val:.5f}", ha="center", va="bottom",
+                     fontsize=9, color=INK_2)
+    delta = x - v
+    axes[0].set_title(f"Reconstruction error  (Δ {delta:+.5f})")
+    axes[0].set_ylabel("test MSE")
+    tidy(axes[0])
+
+    # --- 2. Per-feature error change (variant - vanilla), signed/diverging ---
+    diff = feat_mae[variant] - feat_mae["vanilla"]
+    order = np.argsort(diff)
+    # red = reconstructs this feature worse than vanilla, green = better.
+    colors = [PALETTE[7] if d > 0 else PALETTE[2] for d in diff[order]]
+    axes[1].barh([FEATURES[i] for i in order], diff[order], color=colors, height=0.66)
+    axes[1].axvline(0, color=INK_2, linewidth=0.8)
+    axes[1].set_title("Per-feature error change  (red = worse, green = better)")
+    axes[1].set_xlabel("mean |error|  −  vanilla")
+    axes[1].xaxis.grid(True)
+    axes[1].yaxis.grid(False)
+    axes[1].spines["top"].set_visible(False)
+    axes[1].spines["right"].set_visible(False)
+
+    # --- 3. Pearl ranking: agreement with vanilla ---
+    kept = len(top_pearls[variant] & vanilla_top)
+    changed = TOPN - kept
+    axes[2].bar(["kept", "changed"], [kept, changed],
+                color=[MUTED, PALETTE[1]], width=0.6)
+    for i, val in enumerate([kept, changed]):
+        axes[2].text(i, val, str(val), ha="center", va="bottom",
+                     fontsize=10, color=INK_2)
+    axes[2].set_title(f"Top-{TOPN} pearls vs vanilla")
+    axes[2].set_ylabel("listings")
+    axes[2].set_ylim(0, TOPN)
+    tidy(axes[2])
+
+    fig.suptitle(f"{variant}   vs   vanilla", x=0.005, ha="left",
+                 fontsize=13, fontweight="bold", color=INK)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    plt.show()
+
+
+widgets.interact(
+    compare_to_vanilla,
+    variant=widgets.Dropdown(options=variant_names, value="denoising",
+                             description="variant:"),
+)
+''')
+
+# --------------------------------------------------------------------------
 # 7. Good anomalies
 # --------------------------------------------------------------------------
 md(r"""
 ---
 ## 7. Finding *good* anomalies — the direction trick
 
-This is the heart of the workshop, and the idea that makes this project different
-from textbook anomaly detection.
+This is the heart of the workshop — the idea that sets this project apart from
+textbook anomaly detection.
 
-A scalar error score tells you *how* unusual a listing is. It cannot tell you
-*how* it is unusual. So we throw away the norm and keep the whole **signed error
-vector**:
+A scalar error score says *how* unusual a listing is, but not in *what way*. So we
+keep the whole **signed error vector** instead of its norm:
 
 $$e = x - \hat{x} \in \mathbb{R}^{13}$$
 
-Every coordinate is now a readable statement about one feature:
+Each coordinate is now a readable statement about one feature:
 
 | $e_j$ | Meaning |
 |-------|---------|
@@ -1229,31 +1311,25 @@ print(pd.Series(d_pearl, index=FEATURES).to_string())
 md(r"""
 ### Two ways to search along $d$ — and why they differ
 
-**The repository's approach** (`src/inference.py`) runs a nearest-neighbour query:
-find the listings whose error vector is closest to $d$ in Euclidean distance. It
-works, and the algebra tells you *why* it works — which is more interesting than
-the result:
+**The repository's approach** (`src/inference.py`) finds the listings whose error
+vector is closest to $d$ (nearest-neighbour). The algebra shows *why* that works:
 
 $$\lVert e - d \rVert^2 = \lVert e \rVert^2 - 2\,e \cdot d + \lVert d \rVert^2$$
 
-$\lVert d \rVert^2$ is constant, so minimising the distance means maximising
+$\lVert d \rVert^2$ is constant, so minimising the distance maximises
 
 $$e \cdot d - \tfrac{1}{2}\lVert e \rVert^2$$
 
-Read that carefully: it rewards alignment with $d$ **and penalises total weirdness**.
-A listing that is cheap *and* has a bogus geolocation *and* an impossible admin fee
-gets pushed down. That is a feature, not a bug — it is a built-in "don't show me
+— it rewards alignment with $d$ **and penalises total weirdness**. A listing that is
+cheap *but also* has a bogus geolocation gets pushed down: a built-in "don't show me
 data-entry errors" term.
 
 **The projection score** keeps only the first half:
 
 $$s = e \cdot \hat{d}, \qquad \hat{d} = d / \lVert d \rVert$$
 
-Pure alignment, no penalty for being strange elsewhere. It surfaces more extreme
-candidates, including more junk.
-
-We compute both and compare. Neither is "correct" — they encode different appetites
-for risk.
+Pure alignment, no weirdness penalty — more extreme candidates, more junk. We
+compute both; neither is "correct", they just encode different risk appetites.
 """)
 
 code(r'''
@@ -1341,21 +1417,19 @@ md(r"""
 ---
 ## 8. Clustering the error space — discovering *kinds* of anomaly
 
-Ranking by a direction answers a question you already knew how to ask. But you had
-to *invent* $d$ — you assumed a bargain looks like "cheap and big". What if the
-market contains opportunity shapes you did not think of?
+Ranking by a direction assumes you already know what a bargain looks like — you had
+to *invent* $d$. What if the market contains opportunity shapes you didn't think of?
 
-So invert the problem. Instead of picking a direction and ranking, **cluster the
-error vectors** and let the data tell you which directions actually exist:
+So invert the problem: **cluster the error vectors** and let the data reveal which
+directions exist:
 
 $$\text{KMeans}(\{e_i\}) \rightarrow \text{clusters } C_1, \dots, C_k$$
 
-Each centroid is a **13-dimensional signature of one recurring way of being
-abnormal**. One cluster will be "priced above the model". Another "unusually large
-for the stratum". Another might be pure data-entry noise. You read them off the
-centroid rather than guessing them in advance.
+Each centroid is a **signature of one recurring way of being abnormal** — "priced
+above the model", "unusually large for the stratum", or just data-entry noise. You
+read them off the centroids instead of guessing.
 
-Then you *still* use your direction — but to **pick a cluster**, not a listing:
+Then you still use your direction — but to **pick a cluster**, not a listing:
 
 $$C^\star = \arg\max_k \ \frac{\bar{e}_k \cdot d}{\lVert \bar{e}_k \rVert \lVert d \rVert}$$
 """)
@@ -1506,18 +1580,17 @@ md(r"""
 ---
 ## 9. Sanity check — is it really a bargain?
 
-The model says these listings are underpriced. The model can be wrong, and it has
-an obvious failure mode: if a listing is cheap because it is genuinely bad
-(terrible location, unlivable, mis-typed data), the autoencoder will happily flag
-it as a pearl.
+The model can be wrong, with an obvious failure mode: a listing that is cheap
+because it is genuinely bad (terrible location, mis-typed data) also looks like a
+pearl.
 
-So we check the old-fashioned way. Take a candidate, find the listings that are
-**genuinely comparable** — same stratum, same size, same neighbourhood — and
-compare prices directly. This is `src/find_nearest_properties.py`, and it is
-deliberately *not* a neural network: it is the independent second opinion.
+So we check the old-fashioned way — take a candidate, find its **genuinely
+comparable** listings (same stratum, size, neighbourhood), and compare prices
+directly. This is `src/find_nearest_properties.py`: deliberately *not* a neural
+network, an independent second opinion.
 
-Note which features we match on. `price` and `area` are **excluded** — matching on
-price would defeat the purpose, and area is what we claim is unusual.
+We match on location / stratum / rooms but **exclude `price` and `area`** — matching
+on price would defeat the purpose, and area is what we claim is unusual.
 """)
 
 code(r'''
