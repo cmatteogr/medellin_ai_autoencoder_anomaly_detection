@@ -6,6 +6,17 @@ Finding anomalies in a data set does not always represent unwanted values, somet
 
 The data set used contains properties for sale in Medellín (2021-2024). The goal is to find the good opportunities in the real state Medellín market.
 
+## Workshop
+An interactive workshop notebook is available in `notebooks/`, designed to run end to end on Google Colab:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/cmatteogr/medellin_ai_autoencoder_anomaly_detection/blob/main/notebooks/workshop_autoencoder_anomaly_detection.ipynb)
+
+It rebuilds the project step by step and extends it with a single configurable autoencoder whose regularization terms and latent-space transformations can be switched on, off, and combined:
+
+* **Denoising** (gaussian / masking input corruption), **Sparse** (L1 and KL-divergence flavours), **Variational** (β-VAE), **Contractive** (Jacobian penalty via the Hutchinson estimator), **Hyperspherical** (unit-sphere latent) and **Deep SVDD** (hypersphere compactness) — plus hybrids such as denoising + sparse + variational.
+* The *good anomaly* search is explained as a **direction in reconstruction-error space**, including why the repository's nearest-neighbour query is equivalent to maximising `e·d - ½‖e‖²`.
+* A **clustering** section groups the signed error vectors so the recurring *kinds* of anomaly emerge from the data instead of being assumed.
+
 ## Setup
 Use python 3.12 and install the dependecies using requirements.txt
 ```bash
